@@ -9,6 +9,7 @@ pygame.display.set_caption("A Platformer Game")
 WIDTH,HEIGHT=1000,500
 FPS=60
 VEL=5
+SIZEFACTOR=2
 RAN=True
 COLORS=["Yellow"]
 ANISPEED=3
@@ -37,7 +38,7 @@ def flipimg(imgs):
         fimgs.append(pygame.transform.flip(img,1,0))
     return fimgs
 
-def loadSpriteSheets(dir,dir2,width,height):
+def loadSpriteSheets(dir,dir2,width,height,SIZEFACTOR=2):
     images=[]
     fopath=os.path.join(PATH,dir)
     if dir2:
@@ -49,7 +50,7 @@ def loadSpriteSheets(dir,dir2,width,height):
             fpath=os.path.join(cpath,file)
             images.append(fpath)
     all_anims={}
-    
+    all_masks={}
     for image in images:
         sheet=pygame.image.load(image)
         anims=[]
@@ -57,12 +58,18 @@ def loadSpriteSheets(dir,dir2,width,height):
             surface=pygame.Surface((width,height),pygame.SRCALPHA,32)
             rect=pygame.Rect(i*width,0,width,height)
             surface.blit(sheet,(0,0),rect)
-            anims.append(pygame.transform.scale_by(surface,2.5))
+            r=surface.get_bounding_rect() 
+            surface=surface.subsurface(r).copy()
+            anims.append(pygame.transform.scale_by(surface,SIZEFACTOR))
         name = os.path.splitext(os.path.basename(image))[0]
+        right_anims = anims
+        left_anims = flipimg(anims)
         all_anims[name + "_right"] = anims
         all_anims[name + "_left"] = flipimg(anims)
+        all_masks[name + "_right"] = [pygame.mask.from_surface(s) for s in right_anims]
+        all_masks[name + "_left"] = [pygame.mask.from_surface(s) for s in left_anims]
         
-    return all_anims
+    return all_anims,all_masks
 
 def handleGravity(obj):
     GRAVITY = obj.grav
@@ -104,11 +111,12 @@ class Player(pygame.sprite.Sprite):
     def __init__(self,x,y,vel,grav,jump,player,Pnum):
         super().__init__()
         self.pnum=Pnum
-        self.sprites=loadSpriteSheets("MainCharacters",player,32,32)
+        self.sprites,self.masks=loadSpriteSheets("MainCharacters",player,32,32)
+        self.masksheet=self.masks["idle_right"]
+        self.mask=self.masksheet[0]
         exsprite=pygame.Surface.get_rect(self.sprites["idle_right"][0])
         self.rect=pygame.Rect(x,y,exsprite.width,exsprite.height)
         self.direction="right" if Pnum==1 else "left"
-        self.mask=pygame.mask.from_surface(self.sprites["idle_right"][0])
         self.vel=vel
         self.jump=jump
         self.grav=grav
@@ -164,61 +172,84 @@ class Player(pygame.sprite.Sprite):
             self.fall_vel = -self.jump
     
     def handleAnims(self):
+        prev=self.state
         if self.x_vel!=0:
             self.state="run_"
-        elif self.y_vel<0:
-            self.state="fall_"
         elif self.y_vel>0:
+            self.state="fall_"
+        elif self.y_vel<0:
             if self.jumpcount==1:
                 self.state="jump_"
             elif self.jumpcount==2:
                 self.state="double_jump_"
         else:
             self.state="idle_"
-        self.spritesheet=self.sprites[self.state+self.direction]
+            
+        if self.state != prev:
+            self.i = 0
+        key=self.state+self.direction
+        self.spritesheet=self.sprites[key]
+        self.masksheet=self.masks[key]
+        
     def handleDraw(self):
-        if self.i<len(self.spritesheet):
-            if (next(self.frcount)+3)%ANISPEED==0:
-                self.spritetoDraw=self.spritesheet[self.i]
-                self.i+=1
-            else:
-                self.spritetoDraw=self.spritetoDraw
-        else:
-            self.spritetoDraw=self.spritetoDraw
-            self.i=0
-    
-    def updatemasks(self):
-        self.mask=pygame.mask.from_surface(self.spritetoDraw)
+        if self.i >= len(self.spritesheet):
+                self.i = 0
+        if (next(self.frcount) + 3) % ANISPEED == 0:
+            self.spritetoDraw = self.spritesheet[self.i]
+            self.mask = self.masksheet[self.i]
+            self.i += 1
     
     def land(self):
         self.onground=True
+        # self.onPlatform = True
         self.fall_vel=0
-        self.onPlatform=True
         self.y_vel=0
         
     def hitHead(self):
         self.fall_vel = 0
-        
+    
     @staticmethod
     def handle_vertical_coll(self,objs):
-        self.onPlatform = False
+        # self.onPlatform = False
         for obj in objs:
-            if pygame.sprite.collide_mask(self,obj):
+            if self.rect.colliderect(obj.rect):
                 if self.y_vel>0:
                     self.rect.bottom=obj.rect.top
                     self.land()
-                if self.y_vel<0:
+                elif self.y_vel<0:
                     self.rect.top=obj.rect.bottom
                     self.hitHead()
-                    
-    def loop(self,objs):
+        # if self.rect.y<HEIGHT-75 and not self.onground:
+        #     self.onPlatform=False
+        # elif not sel:
+        #     self.onPlatform=False
+        #     self.onground=True
+    @staticmethod
+    def handle_hor_coll(self,objs):
+        for obj in objs:
+            if self.rect.colliderect(obj.rect) and not self.onPlatform:
+                if self.x_vel>0:
+                    self.rect.right-=self.x_vel
+                elif self.x_vel<0:
+                    self.rect.left+=self.x_vel
+    def handle_horizontal_coll(self, objs,dx,player2):
+        self.rect.x+=self.x_vel
+        collidedobjs = None
+        for obj in objs:
+            if pygame.sprite.collide_mask(obj,self):
+                collidedobjs=obj
+        if self.rect.colliderect(player2.rect):
+            if pygame.sprite.collide_mask(self,player2):
+                collidedobjs=player2
+        self.rect.x-=self.x_vel
+    def loop(self,objs,platforms):
         self.playerprev=self.rect
         self.handlemove()
         self.handleJump()
         handleGravity(self)
+        self.handle_hor_coll(self,platforms)
         self.handle_vertical_coll(self,objs)
         self.handleAnims()
-        self.updatemasks()
         self.handleDraw()
 
 def settingupVars(ran=False,colors=["Blue"]):
@@ -237,14 +268,14 @@ def settingupVars(ran=False,colors=["Blue"]):
         twh=[]
         for i in colors:
             path=os.path.join(tpath,i+".png")
-            img=pygame.image.load(path)
+            img=pygame.image.load(path).convert_alpha()
             s=abimg(img)
             twh.append(s)
 settingupVars(RAN,COLORS)
 
 def load_block(size,blocksize):
     path=os.path.join(PATH,"Terrain","Terrain.png")
-    img=pygame.image.load(path)
+    img=pygame.image.load(path).convert_alpha()
     surface=pygame.Surface((size,size),pygame.SRCALPHA,32)
     rect=pygame.Rect(96,BLOCK,size,size)
     surface.blit(img,(0,0),rect)
@@ -291,6 +322,8 @@ def draw(bg,objs,P1,P2,tag):
     WIN.blit(bg,(0,0))
     for obj in objs:
         obj.Draw()
+    pygame.draw.rect(WIN,(0,0,0),P1.rect)
+    pygame.draw.rect(WIN,(0,0,0),P2.rect)
     WIN.blit(tag.sprite,tag.rect)
     WIN.blit(P1.spritetoDraw,P1.rect)
     WIN.blit(P2.spritetoDraw,P2.rect)
@@ -307,7 +340,8 @@ def main():
     player2=Player(WIDTH-128,0,VEL,0.5,12,"MaskDude",1)
     floor=[Genblock(i*BLOCKSIZE,HEIGHT-BLOCKSIZE//2,BLOCKSIZE,BLOCKSIZE) for i in range(-WIDTH//BLOCKSIZE,WIDTH*2//BLOCKSIZE)]
     platform=[(120, 340, 4),(680, 340, 4),(404, 230, 4),(160, 150, 3),(696, 150, 3)]
-    blocks=floor+create_platforms(platform)
+    platforms=create_platforms(platform)
+    blocks=floor+platforms
     tile=getBgPos(twh)
     clock=pygame.time.Clock()
     run=True
@@ -323,8 +357,8 @@ def main():
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 run=False
-        player1.loop(blocks)
-        player2.loop(blocks)
+        player1.loop(blocks,platforms)
+        player2.loop(blocks,platforms)
         offset=(player2.rect.x-player1.rect.x,player2.rect.y-player1.rect.y)
         if player1.mask.overlap(player2.mask,offset) and TagC>60:
             if player1.tagged==1:
@@ -336,6 +370,7 @@ def main():
                 player1.tagged=1
                 print("Tag By 2")
             TagC=0
+            
         tag.loop()
         draw(img,blocks,player1,player2,tag)
         TagC+=1
