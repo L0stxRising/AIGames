@@ -58,8 +58,8 @@ def loadSpriteSheets(dir,dir2,width,height,SIZEFACTOR=2):
             surface=pygame.Surface((width,height),pygame.SRCALPHA,32)
             rect=pygame.Rect(i*width,0,width,height)
             surface.blit(sheet,(0,0),rect)
-            r=surface.get_bounding_rect() 
-            surface=surface.subsurface(r).copy()
+            # r=surface.get_bounding_rect() 
+            # surface=surface.subsurface(r).copy()
             anims.append(pygame.transform.scale_by(surface,SIZEFACTOR))
         name = os.path.splitext(os.path.basename(image))[0]
         right_anims = anims
@@ -115,7 +115,7 @@ class Player(pygame.sprite.Sprite):
         self.masksheet=self.masks["idle_right"]
         self.mask=self.masksheet[0]
         exsprite=pygame.Surface.get_rect(self.sprites["idle_right"][0])
-        self.rect=pygame.Rect(x,y,exsprite.width,exsprite.height)
+        self.rect=pygame.Rect(x,y,exsprite.width,exsprite.height+5).scale_by(0.75)
         self.direction="right" if Pnum==1 else "left"
         self.vel=vel
         self.jump=jump
@@ -147,7 +147,7 @@ class Player(pygame.sprite.Sprite):
                 self.direction="right"
             self.rect.x=self.rect.x+self.vel
         elif keys[left] and self.rect.x>0:
-            self.x_vel=self.vel
+            self.x_vel=-self.vel
             if self.direction!="left":
                 self.direction="left"
             self.rect.x=self.rect.x-self.vel
@@ -164,12 +164,14 @@ class Player(pygame.sprite.Sprite):
             self.jumpcount=1
             self.state="jump_"
             self.fall_vel = -self.jump
+            self.y_vel = self.fall_vel
             self.onground = False
             self.onPlatform=False
         if keys[pygame.K_SPACE] and not self.onground and self.jumpcount==1:
             self.jumpcount=2
             self.state="double_jump_"
             self.fall_vel = -self.jump
+            self.y_vel = self.fall_vel
     
     def handleAnims(self):
         prev=self.state
@@ -224,30 +226,32 @@ class Player(pygame.sprite.Sprite):
         # elif not sel:
         #     self.onPlatform=False
         #     self.onground=True
-    @staticmethod
-    def handle_hor_coll(self,objs):
+    # @staticmethod
+    def handle_horizontal_coll(self, objs):
         for obj in objs:
-            if self.rect.colliderect(obj.rect) and not self.onPlatform:
-                if self.x_vel>0:
-                    self.rect.right-=self.x_vel
-                elif self.x_vel<0:
-                    self.rect.left+=self.x_vel
-    def handle_horizontal_coll(self, objs,dx,player2):
-        self.rect.x+=self.x_vel
-        collidedobjs = None
-        for obj in objs:
-            if pygame.sprite.collide_mask(obj,self):
-                collidedobjs=obj
-        if self.rect.colliderect(player2.rect):
-            if pygame.sprite.collide_mask(self,player2):
-                collidedobjs=player2
-        self.rect.x-=self.x_vel
+            if self.rect.colliderect(obj.rect):
+                if self.x_vel > 0:
+                    self.rect.right = obj.rect.left
+                elif self.x_vel < 0:
+                    self.rect.left = obj.rect.right
+    # def handle_horizontal_coll(self, objs):
+    #     self.rect.x+=self.x_vel
+    #     collidedobjs = None
+    #     for obj in objs:
+    #         if pygame.sprite.collide_mask(obj,self) and not self.onground:
+    #             collidedobjs=obj
+    #     # if self.rect.colliderect(player2.rect):
+    #     #     if pygame.sprite.collide_mask(self,player2):
+    #     #         collidedobjs=player2
+    #     self.rect.x-=self.x_vel
+    #     self.rect.x-=self.x_vel if collidedobjs else 0
+        
     def loop(self,objs,platforms):
         self.playerprev=self.rect
         self.handlemove()
+        self.handle_horizontal_coll(platforms)
         self.handleJump()
         handleGravity(self)
-        self.handle_hor_coll(self,platforms)
         self.handle_vertical_coll(self,objs)
         self.handleAnims()
         self.handleDraw()
@@ -325,8 +329,8 @@ def draw(bg,objs,P1,P2,tag):
     pygame.draw.rect(WIN,(0,0,0),P1.rect)
     pygame.draw.rect(WIN,(0,0,0),P2.rect)
     WIN.blit(tag.sprite,tag.rect)
-    WIN.blit(P1.spritetoDraw,P1.rect)
-    WIN.blit(P2.spritetoDraw,P2.rect)
+    WIN.blit(P1.spritetoDraw, P1.spritetoDraw.get_rect(midbottom=P1.rect.midbottom))
+    WIN.blit(P2.spritetoDraw, P2.spritetoDraw.get_rect(midbottom=P2.rect.midbottom))
     pygame.display.update()
     
 def cachebg(tile):
