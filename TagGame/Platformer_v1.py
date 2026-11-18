@@ -4,16 +4,15 @@ import random
 import math
 import numpy as np
 import threading
-pygame.init()
-pygame.display.set_caption("A Platformer Game")
+import PIL.Image as Image
+
 WIDTH,HEIGHT=1000,500
-FPS=60
 VEL=5
 SIZEFACTOR=2
 RAN=True
 COLORS=["Yellow"]
 ANISPEED=3
-WIN=pygame.display.set_mode((WIDTH,HEIGHT))
+WIN=pygame.Surface((WIDTH,HEIGHT))
 file=os.path.abspath(__file__).split("\\")
 file=file[0:len(file)-1]
 fpath="\\".join(file)
@@ -23,11 +22,72 @@ BLOCK=2
 BLOCK*=64 #Blocks at Differ of 64
 BLOCKIMG=None
 
+class TagENV():
+    def __init__(self):
+        self.p1=Player(64,0,VEL,0.5,12,"VirtualGuy",2)
+        self.p2=Player(WIDTH-128,0,VEL,0.5,12,"MaskDude",1)
+        floor=[Genblock(i*BLOCKSIZE,HEIGHT-BLOCKSIZE//2,BLOCKSIZE,BLOCKSIZE) for i in range(-WIDTH//BLOCKSIZE,WIDTH*2//BLOCKSIZE)]
+        platform=[(120, 340, 4),(680, 340, 4),(404, 230, 4),(160, 150, 3),(696, 150, 3)]
+        platforms=create_platforms(platform)
+        self.blocks=floor+platforms
+        tile=getBgPos(twh)
+        self.bg=cachebg(tile)
+        tagStart=[True,False]
+        random.shuffle(tagStart)
+        self.p1.tagged=tagStart[0]
+        self.p2.tagged=tagStart[1]
+        self.TagC=0
+        self.tag=Tag(self.p1,self.p2)
+        
+        self.TIME=60*60
+        self.TIME_F=0
+        self.truncated=False
+    def step(self):
+        self.p1.loop(self.blocks,self.platforms)
+        self.p2.loop(self.blocks,self.platforms)
+        offset=(self.p2.rect.x-self.p1.rect.x,self.p2.rect.y-self.p1.rect.y)
+        if self.p1.mask.overlap(self.p2.mask,offset) and self.TagC>60:
+            if self.p1.tagged==1:
+                self.p2.tagged=1
+                self.p1.tagged=0
+                print("Tag By 1")
+            else:
+                self.p2.tagged=0
+                self.p1.tagged=1
+                print("Tag By 2")
+            self.TagC=0
+            
+        self.tag.loop()
+        draw(self.bg,self.blocks,self.p1,self.p2,self.tag)
+        self.TagC+=1
+        self.TIME_F+=1
+        obs=self.get_Obs()
+        reward1=self.get_reward()
+        reward2=self.get_reward()
+        won=[0,0]
+        if self.TIME_F>=self.TIME:
+            self.truncated=True
+            won=self.CheckW()
+            return obs, reward1, reward2, won, self.truncated
+        return obs, reward1, reward2, won, self.truncated
+    
+    def CheckW(self):
+        W=[0,1] if self.p1.tagged else [1,0]
+        return W
+    
+    def get_Obs(self):
+        im=pygame.image.tobytes(WIN,"RGB")
+        return Image.frombytes("RGB",WIN.get_size(),im).convert("L")
+    
+    def reset(self):
+        self.__init__()
+        
 def genframeVal():
     num=0
     while True:
         yield num
         num+=1
+
 def abimg(img):
     _,_,width,height=img.get_rect()
     return (img,width,height)
@@ -106,8 +166,8 @@ class Tag(pygame.sprite.Sprite):
     def loop(self):
         self.tagged=self.P1 if self.P1.tagged else self.P2
         self.follow()
+
 class Player(pygame.sprite.Sprite):
-    fr2=genframeVal()
     def __init__(self,x,y,vel,grav,jump,player,Pnum):
         super().__init__()
         self.pnum=Pnum
@@ -240,9 +300,9 @@ class Player(pygame.sprite.Sprite):
     #     for obj in objs:
     #         if pygame.sprite.collide_mask(obj,self) and not self.onground:
     #             collidedobjs=obj
-    #     # if self.rect.colliderect(player2.rect):
-    #     #     if pygame.sprite.collide_mask(self,player2):
-    #     #         collidedobjs=player2
+    #     # if self.rect.colliderect(self.p2.rect):
+    #     #     if pygame.sprite.collide_mask(self,self.p2):
+    #     #         collidedobjs=self.p2
     #     self.rect.x-=self.x_vel
     #     self.rect.x-=self.x_vel if collidedobjs else 0
         
@@ -331,7 +391,6 @@ def draw(bg,objs,P1,P2,tag):
     WIN.blit(tag.sprite,tag.rect)
     WIN.blit(P1.spritetoDraw, P1.spritetoDraw.get_rect(midbottom=P1.rect.midbottom))
     WIN.blit(P2.spritetoDraw, P2.spritetoDraw.get_rect(midbottom=P2.rect.midbottom))
-    pygame.display.update()
     
 def cachebg(tile):
     img=pygame.Surface((WIDTH,HEIGHT))
@@ -339,47 +398,5 @@ def cachebg(tile):
         img.blit(i[1],i[0])
     return img
 
-def main():
-    player1=Player(64,0,VEL,0.5,12,"VirtualGuy",2)
-    player2=Player(WIDTH-128,0,VEL,0.5,12,"MaskDude",1)
-    floor=[Genblock(i*BLOCKSIZE,HEIGHT-BLOCKSIZE//2,BLOCKSIZE,BLOCKSIZE) for i in range(-WIDTH//BLOCKSIZE,WIDTH*2//BLOCKSIZE)]
-    platform=[(120, 340, 4),(680, 340, 4),(404, 230, 4),(160, 150, 3),(696, 150, 3)]
-    platforms=create_platforms(platform)
-    blocks=floor+platforms
-    tile=getBgPos(twh)
-    clock=pygame.time.Clock()
-    run=True
-    img=cachebg(tile)
-    tagStart=[True,False]
-    random.shuffle(tagStart)
-    player1.tagged=tagStart[0]
-    player2.tagged=tagStart[1]
-    TagC=0
-    tag=Tag(player1,player2)
-    while run:
-        clock.tick(FPS)
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                run=False
-        player1.loop(blocks,platforms)
-        player2.loop(blocks,platforms)
-        offset=(player2.rect.x-player1.rect.x,player2.rect.y-player1.rect.y)
-        if player1.mask.overlap(player2.mask,offset) and TagC>60:
-            if player1.tagged==1:
-                player2.tagged=1
-                player1.tagged=0
-                print("Tag By 1")
-            else:
-                player2.tagged=0
-                player1.tagged=1
-                print("Tag By 2")
-            TagC=0
-            
-        tag.loop()
-        draw(img,blocks,player1,player2,tag)
-        TagC+=1
-    
-    pygame.quit()
-    quit()
-if __name__=="__main__":
-    main()
+# if __name__=="__main__":
+#     main()
