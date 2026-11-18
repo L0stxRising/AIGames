@@ -47,7 +47,7 @@ class PaddleGame():
             self.checkwin()
             self.draw()
             pg.display.flip()
-            CLOCK.tick(100000)
+            CLOCK.tick(60)
             
     def checkwin(self):
         global P1 ,P2

@@ -6,10 +6,17 @@ import random
 import math
 from PIL import Image
 
+# pg.init()
+# SCREEN=pg.display.set_mode((W,H))
+# CLOCK=pg.time.Clock()
+# WIN=7
+# GAME_C=0
 W,H=640,360
 Speed=2
 PaddleH,PaddleW=50,10
 
+P1=1
+P2=0
 class PaddleGameENV():
     def __init__(self):
         self.SCREEN=pg.Surface((W,H))
